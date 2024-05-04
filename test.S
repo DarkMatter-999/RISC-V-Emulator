@@ -1,0 +1,5 @@
+jal x5,0x1f
+lui x1,0x12345
+auipc x22,0x10001
+
+bne x2, x4, 0xC

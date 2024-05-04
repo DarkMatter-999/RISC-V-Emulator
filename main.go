@@ -28,13 +28,38 @@ func (cpu *CPU) fetch() uint32 {
 
 func (cpu *CPU) jtype_decode(instruction uint32) uint32 {
 	a := 0x80000000 & instruction
-	b := instruction >> 20
+	b := (instruction >> 21) & 0b11111111110
+	l := ((instruction >> 20) & 0x1) << 11
 	m := 0xff000 & instruction
 
 	if a == 0 {
-		return m | b
+		return m | l | b 
 	} else {
-		return 0xfff00000 | m | b 
+		return 0xfff00000 | m | l | b 
+	}
+}
+
+func (cpu *CPU) btype_decode(instruction uint32) uint32 {
+	a := 0x80000000 & instruction
+	y := ((instruction >> 7) & 0x1) << 11
+	u := (instruction >> 7) & 0b11110
+	b := (instruction >> 20) & 0b11111100000
+
+	if a == 0 {
+		return y | b | u 
+	} else {
+		return 0xfffff000 | y | b | u
+	}
+}
+
+func (cpu *CPU) stype_decode(instruction uint32) uint32 {
+	a := 0x80000000 & instruction
+	b := (instruction >> 20) & 0b111111100000
+	u := (instruction >> 7) & 0b11111
+	if a == 0 {
+		return b | u 
+	} else {
+		return 0xfffff000 | b | u
 	}
 }
 
@@ -59,6 +84,71 @@ func (cpu *CPU) decode(instruction uint32) {
 		cpu.reg[rd] = cpu.pc + 4
 		imm_j := cpu.jtype_decode(instruction)
 		cpu.pc = cpu.pc + imm_j
+
+	case 0x63: // Btype
+		imm_b := cpu.btype_decode(instruction)
+		rs1 := (instruction >> 15) & 0b11111
+		rs2 := (instruction >> 20) & 0b11111
+
+		ins := (instruction >> 12) & 0b111
+		switch ins {
+		case 0b000: // beq
+			if cpu.reg[rs1] == cpu.reg[rs2] {
+				cpu.pc += imm_b
+			} else {
+				cpu.pc += 4
+			}
+		case 0b001: // bne
+			if cpu.reg[rs1] != cpu.reg[rs2] {
+				cpu.pc += imm_b
+			} else {
+				cpu.pc += 4
+			}
+		case 0b100: // blt
+			if int32(cpu.reg[rs1]) < int32(cpu.reg[rs2]) {
+				cpu.pc += imm_b
+			} else {
+				cpu.pc += 4
+			}
+		case 0b101: // bge
+			if int32(cpu.reg[rs1]) >= int32(cpu.reg[rs2]) {
+				cpu.pc += imm_b
+			} else {
+				cpu.pc += 4
+			}	
+		case 0b110: // bltu
+			if cpu.reg[rs1] < cpu.reg[rs2] {
+				cpu.pc += imm_b
+			} else {
+				cpu.pc += 4
+			}
+		case 0b111: // bgeu
+			if cpu.reg[rs1] >= cpu.reg[rs2] {
+				cpu.pc += imm_b
+			} else {
+				cpu.pc += 4
+			}
+		}
+	case 0x23: // SType 
+		imm_s := cpu.stype_decode(instruction)
+		rs1 := (instruction >> 15) & 0b11111
+		rs2 := (instruction >> 20) & 0b11111
+
+		ins := (instruction >> 12) & 0b111
+		switch ins {
+			case 0b000: // sb
+				addr := rs1 + imm_s
+				cpu.mem_insert((cpu.mem_get(addr) & 0x00) | (0xFFFFFF00 & rs2), addr)
+				cpu.pc += 4
+			case 0b001: // sh 
+				addr := rs1 + imm_s
+				cpu.mem_insert((cpu.mem_get(addr) & 0x0000) | (0xFFFF0000 & rs2), addr)
+				cpu.pc += 4
+			case 0b010: // sw
+				addr := rs1 + imm_s
+				cpu.mem_insert(addr, rs2)
+				cpu.pc += 4
+		}
 
 	default:
 		cpu.pc += 4 // Change to err later
@@ -89,12 +179,17 @@ func (cpu *CPU) mem_insert(instruction uint32, index uint32) {
 	cpu.mem[3 + index*4] = byte(instruction >> 0)  & 0xFF
 }
 
+func (cpu *CPU) mem_get(index uint32) uint32 {
+	return uint32(cpu.mem[index]) << 24 | uint32(cpu.mem[index + 1]) << 16 | uint32(cpu.mem[index + 2]) << 8 | uint32(cpu.mem[index + 3]) << 0
+}
+
 func main() {
 	cpu := newCPU()
 
 	cpu.mem_insert(0x123450b7, 0) // lui x1,0x12345
 	cpu.mem_insert(0x10011b17, 1) // auipc x22,0x10001
-	cpu.mem_insert(0x008002ef, 2) // jal x5,0x1c
+	cpu.mem_insert(0x008002ef, 2) // jal x5,0
+	cpu.mem_insert(0x00520463, 3)
 
 	var input string
 	for {	
