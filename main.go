@@ -149,6 +149,57 @@ func (cpu *CPU) decode(instruction uint32) {
 				cpu.mem_insert(addr, rs2)
 				cpu.pc += 4
 		}
+	case 0x33: // RType
+		rs1 := (instruction >> 15) & 0b11111
+		rs2 := (instruction >> 20) & 0b11111
+		rd := (instruction >> 7) & 0b11111
+
+		func3 := (instruction >> 12) & 0b111
+		func7 := (instruction >> 25) & 0b1111111
+
+		switch func3 {
+			case 0b000: // add / sub
+				if (func7 == 0) {
+					cpu.reg[rd] = cpu.reg[rs1] + cpu.reg[rs2]
+				} else {
+					cpu.reg[rd] = cpu.reg[rs1] - cpu.reg[rs2]
+				}
+			case 0b001: // sll
+				cpu.reg[rd] = cpu.reg[rs1] << (0b11111 & cpu.reg[rs2])
+			case 0b010:
+				if (int32(cpu.reg[rs1]) < int32(cpu.reg[rs2])) {
+					cpu.reg[rd] = 1	
+				} else {
+					cpu.reg[rd] = 0
+				}
+			case 0b011: // stlu
+				if (cpu.reg[rs1] < cpu.reg[rs2]) {
+					cpu.reg[rd] = 1	
+				} else {
+					cpu.reg[rd] = 0
+				}
+			case 0b100: // xor
+				cpu.reg[rd] = cpu.reg[rs1] ^ cpu.reg[rs2]
+			case 0b101: // srl / sra
+				if (func7 == 0) {
+					cpu.reg[rd] = cpu.reg[rs1] >> (0b11111 & cpu.reg[rs2])
+				} else {
+					shiftAmount := uint32(0b11111 & cpu.reg[rs2])
+					signBit := cpu.reg[rs1] & 0x80000000
+					logicalShifted := cpu.reg[rs1] >> shiftAmount
+					if signBit != 0 {
+						mask := uint32(0xFFFFFFFF) << (32 - shiftAmount)
+						cpu.reg[rd] = logicalShifted | mask
+					} else {
+						cpu.reg[rd] = logicalShifted
+					}
+				}
+			case 0b110: // or
+				cpu.reg[rd] = cpu.reg[rs1] | cpu.reg[rs2]
+			case 0b111: // and
+				cpu.reg[rd] = cpu.reg[rs1] & cpu.reg[rs2]
+		}
+
 
 	default:
 		cpu.pc += 4 // Change to err later
