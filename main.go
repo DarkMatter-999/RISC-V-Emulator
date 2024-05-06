@@ -63,6 +63,15 @@ func (cpu *CPU) stype_decode(instruction uint32) uint32 {
 	}
 }
 
+func (cpu *CPU) itype_decode(instruction uint32) uint32 {
+	a := 0x80000000 & instruction
+	if a == 0 {
+		return (instruction >> 20)
+	} else {
+		return 0xfffff000 | (instruction >> 20)
+	}
+}
+
 func (cpu *CPU) decode(instruction uint32) {
 	cpu.reg[0] = 0
 
@@ -199,6 +208,88 @@ func (cpu *CPU) decode(instruction uint32) {
 			case 0b111: // and
 				cpu.reg[rd] = cpu.reg[rs1] & cpu.reg[rs2]
 		}
+		cpu.pc += 4
+	case 0x3: // IType
+		rs1 := (instruction >> 15) & 0b11111
+		rd := (instruction >> 7) & 0b11111
+
+		ins := (instruction >> 12) & 0b111
+		imm_i := cpu.itype_decode(instruction)
+
+		switch ins {
+			case 0b000: // lb
+				address := cpu.mem_get(rs1) + imm_i
+				loadedByte := int32(cpu.mem_get(address))
+				signExtendedByte := uint32(int8(loadedByte))
+				cpu.reg[rd] = signExtendedByte
+			case 0b001: // lh
+				address := cpu.mem_get(rs1) + imm_i
+				loadedHalfWord := int32(uint16(cpu.mem_get(address)) | uint16(cpu.mem_get(address+1))<<8)
+				signExtendedHalfWord := uint32(int16(loadedHalfWord))
+				cpu.reg[rd] = signExtendedHalfWord
+			case 0b010: // lw
+				address := cpu.reg[rs1] + imm_i
+				loadedWord := uint32(cpu.mem_get(address) | uint32(cpu.mem_get(address+1))<<8 | uint32(cpu.mem_get(address+2))<<16 | uint32(cpu.mem_get(address+3))<<24)
+				cpu.reg[rd] = loadedWord
+			case 0b100: // lbu
+				address := cpu.reg[rs1] + imm_i
+				loadedByte := cpu.mem_get(address)
+				cpu.reg[rd] = loadedByte 
+			case 0b101: // lhu
+				address := cpu.reg[rs1] + imm_i 
+				loadedHalfWord := cpu.mem_get(address) | cpu.mem_get(address+1)<<8
+				cpu.reg[rd] = loadedHalfWord 
+		}
+		cpu.pc += 4
+	case 0x13: // IType
+		rs1 := (instruction >> 15) & 0b11111
+		rd := (instruction >> 7) & 0b11111
+
+		ins := (instruction >> 12) & 0b111
+		imm_i := cpu.itype_decode(instruction)
+
+		switch ins {
+			case 0b000: // addi
+				cpu.reg[rd] = cpu.reg[rs1] + imm_i
+			case 0b010: // slti
+				if (int32(cpu.reg[rs1]) < int32(imm_i)) {
+					cpu.reg[rd] = 1 
+				} else {
+					cpu.reg[rd] = 0
+				}
+			case 0b011: // sltiu
+				if (cpu.reg[rs1] < imm_i) {
+					cpu.reg[rd] = 1 
+				} else {
+					cpu.reg[rd] = 0
+				}
+			case 0b100: // xori
+				cpu.reg[rd] = cpu.reg[rs1] ^ imm_i
+			case 0b110: // ori
+				cpu.reg[rd] = cpu.reg[rs1] | imm_i
+			case 0b111: //andi
+				cpu.reg[rd] = cpu.reg[rs1] & imm_i
+			
+			case 0b001: // slli
+				shamt := imm_i & 0b11111
+				cpu.reg[rd] = cpu.reg[rs1] << shamt
+			case 0b101: // srli / srai
+				shamt := imm_i & 0b11111
+				if ((imm_i >> 5) > 0) {
+					shiftAmount := uint32(0b11111 & imm_i)
+					signBit := cpu.reg[rs1] & 0x80000000
+					logicalShifted := cpu.reg[rs1] >> shiftAmount
+					if signBit != 0 {
+						mask := uint32(0xFFFFFFFF) << (32 - shiftAmount)
+						cpu.reg[rd] = logicalShifted | mask
+					} else {
+						cpu.reg[rd] = logicalShifted
+					}
+				} else {
+					cpu.reg[rd] = cpu.reg[rs1] >> shamt
+				}
+		}
+		cpu.pc += 4
 
 
 	default:
